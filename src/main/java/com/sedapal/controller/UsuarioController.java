@@ -136,7 +136,8 @@ public class UsuarioController {
      * Obtener usuario por email
      * GET /api/usuarios/{email}
      */
-    @GetMapping("/{email}")
+    // Acepta emails con puntos (.) y signos
+    @GetMapping("/{email:.+}")
     public ResponseEntity<?> obtenerPorEmail(@PathVariable String email) {
         try {
             UsuarioDTO.UsuarioResponse response = usuarioService.obtenerPorEmail(email);
