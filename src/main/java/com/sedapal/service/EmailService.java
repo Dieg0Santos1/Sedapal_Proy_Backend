@@ -12,6 +12,15 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.scheduling.annotation.Async;
 
+// SendGrid
+import com.sendgrid.Method;
+import com.sendgrid.Request;
+import com.sendgrid.Response;
+import com.sendgrid.SendGrid;
+import com.sendgrid.helpers.mail.Mail;
+import com.sendgrid.helpers.mail.objects.Content;
+import com.sendgrid.helpers.mail.objects.Email;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -25,6 +34,9 @@ public class EmailService {
     @Value("${app.frontend.url:http://localhost:5173}")
     private String frontendUrl;
 
+    @Value("${sendgrid.api.key:}")
+    private String sendgridApiKey;
+
     /**
      * Enviar credenciales de acceso por email
      */
@@ -32,17 +44,10 @@ public class EmailService {
     public void enviarCredenciales(String email, String nombre, String apellido, 
                                    String contrasena, Usuario.Rol rol) {
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(fromEmail);
-            helper.setTo(email);
-            helper.setSubject(obtenerAsunto(rol));
-            helper.setText(construirMensajeHtml(nombre, apellido, email, contrasena, rol), true);
-
-            mailSender.send(message);
+            String html = construirMensajeHtml(nombre, apellido, email, contrasena, rol);
+            enviarHtml(email, obtenerAsunto(rol), html);
             log.info("✅ Email enviado exitosamente a: {}", email);
-        } catch (MessagingException e) {
+        } catch (Exception e) {
             log.error("❌ Error al enviar email a {}: {}", email, e.getMessage());
             throw new RuntimeException("Error al enviar email: " + e.getMessage());
         }
@@ -158,19 +163,11 @@ public class EmailService {
         try {
             log.debug("📋 Parámetros recibidos: email={}, nombreUsuario={}, nombreActividad={}, sistemaAbrev={}, equipoNombre={}, trimestre={}, fechaMaxima={}",
                      email, nombreUsuario, nombreActividad, sistemaAbrev, equipoNombre, trimestre, fechaMaxima);
-            
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(fromEmail);
-            helper.setTo(email);
-            helper.setSubject("📝 Nueva Actividad Asignada - Sistema SEDAPAL");
-            helper.setText(construirMensajeActividadHtml(nombreUsuario, nombreActividad, 
-                          sistemaAbrev, equipoNombre, trimestre, fechaMaxima), true);
-
-            mailSender.send(message);
+            String html = construirMensajeActividadHtml(nombreUsuario, nombreActividad,
+                          sistemaAbrev, equipoNombre, trimestre, fechaMaxima);
+            enviarHtml(email, "📝 Nueva Actividad Asignada - Sistema SEDAPAL", html);
             log.info("✅ Email de actividad enviado a: {}", email);
-        } catch (MessagingException e) {
+        } catch (Exception e) {
             log.error("❌ Error al enviar email de actividad a {}: {}", email, e.getMessage());
             throw new RuntimeException("Error al enviar email: " + e.getMessage());
         }
@@ -286,19 +283,12 @@ public class EmailService {
                                                String sistemaAbrev, String equipoNombre, 
                                                int trimestre, String fechaMaxima) {
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(fromEmail);
-            helper.setTo(email);
-            helper.setSubject("🔐 Credenciales de Acceso y Nueva Actividad - Sistema SEDAPAL");
-            helper.setText(construirMensajeCredencialesConActividadHtml(nombre, apellido, email, 
-                          contrasena, nombreActividad, sistemaAbrev, equipoNombre, trimestre, 
-                          fechaMaxima), true);
-
-            mailSender.send(message);
+            String html = construirMensajeCredencialesConActividadHtml(nombre, apellido, email,
+                          contrasena, nombreActividad, sistemaAbrev, equipoNombre, trimestre,
+                          fechaMaxima);
+            enviarHtml(email, "🔐 Credenciales de Acceso y Nueva Actividad - Sistema SEDAPAL", html);
             log.info("✅ Email de credenciales + actividad enviado a: {}", email);
-        } catch (MessagingException e) {
+        } catch (Exception e) {
             log.error("❌ Error al enviar email a {}: {}", email, e.getMessage());
             throw new RuntimeException("Error al enviar email: " + e.getMessage());
         }
@@ -429,13 +419,7 @@ public class EmailService {
     @Async("mailExecutor")
     public void enviarEmailSimple(String to, String subject, String text) {
         try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromEmail);
-            message.setTo(to);
-            message.setSubject(subject);
-            message.setText(text);
-            
-            mailSender.send(message);
+            sendTextSync(to, subject, text);
             log.info("✅ Email simple enviado a: {}", to);
         } catch (Exception e) {
             log.error("❌ Error al enviar email simple: {}", e.getMessage());
@@ -447,13 +431,76 @@ public class EmailService {
      * Envío síncrono (para endpoint de prueba): devuelve excepción si falla.
      */
     public void enviarEmailSimpleSync(String to, String subject, String text) {
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(fromEmail);
-        message.setTo(to);
-        message.setSubject(subject);
-        message.setText(text);
-        mailSender.send(message);
+        sendTextSync(to, subject, text);
         log.info("✅ Email simple (sync) enviado a: {}", to);
+    }
+
+    // ======= Enrutadores a SendGrid o SMTP =======
+    private void enviarHtml(String to, String subject, String html) {
+        if (sendgridApiKey != null && !sendgridApiKey.isBlank()) {
+            enviarHtmlSendGrid(to, subject, html);
+        } else {
+            enviarHtmlSmtp(to, subject, html);
+        }
+    }
+
+    private void enviarHtmlSmtp(String to, String subject, String html) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setFrom(fromEmail);
+            helper.setTo(to);
+            helper.setSubject(subject);
+            helper.setText(html, true);
+            mailSender.send(message);
+        } catch (MessagingException e) {
+            throw new RuntimeException("SMTP error: " + e.getMessage());
+        }
+    }
+
+    private void enviarHtmlSendGrid(String to, String subject, String html) {
+        try {
+            Mail mail = new Mail(new Email(fromEmail), subject, new Email(to), new Content("text/html", html));
+            mail.setReplyTo(new Email(fromEmail));
+            SendGrid sg = new SendGrid(sendgridApiKey);
+            Request request = new Request();
+            request.setMethod(Method.POST);
+            request.setEndpoint("mail/send");
+            request.setBody(mail.build());
+            Response response = sg.api(request);
+            if (response.getStatusCode() >= 400) {
+                throw new RuntimeException("SendGrid error: " + response.getStatusCode() + " " + response.getBody());
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("SendGrid error: " + e.getMessage(), e);
+        }
+    }
+
+    private void sendTextSync(String to, String subject, String text) {
+        if (sendgridApiKey != null && !sendgridApiKey.isBlank()) {
+            try {
+                Mail mail = new Mail(new Email(fromEmail), subject, new Email(to), new Content("text/plain", text));
+                mail.setReplyTo(new Email(fromEmail));
+                SendGrid sg = new SendGrid(sendgridApiKey);
+                Request request = new Request();
+                request.setMethod(Method.POST);
+                request.setEndpoint("mail/send");
+                request.setBody(mail.build());
+                Response response = sg.api(request);
+                if (response.getStatusCode() >= 400) {
+                    throw new RuntimeException("SendGrid error: " + response.getStatusCode() + " " + response.getBody());
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("SendGrid error: " + e.getMessage(), e);
+            }
+        } else {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromEmail);
+            message.setTo(to);
+            message.setSubject(subject);
+            message.setText(text);
+            mailSender.send(message);
+        }
     }
 
     // ================= Nuevos correos de notificación =================
@@ -462,17 +509,11 @@ public class EmailService {
                                                 String nombreActividad, String entregableNombre, String sistemaAbrev,
                                                 String equipoNombre, String fechaMaxima) {
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(fromEmail);
-            helper.setTo(adminEmail);
-            helper.setSubject("🕓 Revisión requerida: " + nombreActividad);
             String html = construirHtmlNotificacionUsuarioCumplio(usuarioNombre, usuarioEmail, nombreActividad,
                     entregableNombre, sistemaAbrev, equipoNombre, fechaMaxima);
-            helper.setText(html, true);
-            mailSender.send(message);
+            enviarHtml(adminEmail, "🕓 Revisión requerida: " + nombreActividad, html);
             log.info("✅ Notificación enviada al admin {} por cumplimiento de {}", adminEmail, usuarioEmail);
-        } catch (MessagingException e) {
+        } catch (Exception e) {
             throw new RuntimeException("Error al enviar notificación: " + e.getMessage());
         }
     }
@@ -483,19 +524,15 @@ public class EmailService {
                                            String nombreActividad, String entregableNombre,
                                            String sistemaAbrev, String equipoNombre, String fechaMaxima) {
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(fromEmail);
             java.util.List<String> destinatarios = new java.util.ArrayList<>();
             if (usuariosDestino != null) destinatarios.addAll(usuariosDestino);
             if (superadminsDestino != null) destinatarios.addAll(superadminsDestino);
-            helper.setTo(destinatarios.toArray(String[]::new));
-            helper.setSubject("✅ Actividad validada: " + nombreActividad);
             String html = construirHtmlNotificacionConforme(nombreActividad, entregableNombre, sistemaAbrev, equipoNombre, fechaMaxima);
-            helper.setText(html, true);
-            mailSender.send(message);
+            for (String to : destinatarios) {
+                enviarHtml(to, "✅ Actividad validada: " + nombreActividad, html);
+            }
             log.info("✅ Notificación de conforme enviada a {} destinatarios", destinatarios.size());
-        } catch (MessagingException e) {
+        } catch (Exception e) {
             throw new RuntimeException("Error al enviar notificación: " + e.getMessage());
         }
     }
@@ -505,16 +542,10 @@ public class EmailService {
     public void enviarUsuarioCreado(String email, String nombreUsuario, String contrasena,
                                     String gerenciaNombre, String equipoNombre) {
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(fromEmail);
-            helper.setTo(email);
-            helper.setSubject("👤 Usuario creado - Accesos y pertenencia");
             String html = construirHtmlUsuarioCreado(nombreUsuario, email, contrasena, gerenciaNombre, equipoNombre);
-            helper.setText(html, true);
-            mailSender.send(message);
+            enviarHtml(email, "👤 Usuario creado - Accesos y pertenencia", html);
             log.info("✅ Notificación de usuario creado enviada a {}", email);
-        } catch (MessagingException e) {
+        } catch (Exception e) {
             throw new RuntimeException("Error al enviar notificación: " + e.getMessage());
         }
     }
@@ -577,16 +608,10 @@ public class EmailService {
     @Async("mailExecutor")
     public void enviarAsignacionSistema(String email, String nombreAdmin, String sistemaAbrev, String sistemaNombre) {
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(fromEmail);
-            helper.setTo(email);
-            helper.setSubject("🛠️ Sistema asignado: " + (sistemaAbrev != null ? sistemaAbrev : ""));
             String html = construirHtmlAsignacionSistema(nombreAdmin, sistemaAbrev, sistemaNombre);
-            helper.setText(html, true);
-            mailSender.send(message);
+            enviarHtml(email, "🛠️ Sistema asignado: " + (sistemaAbrev != null ? sistemaAbrev : ""), html);
             log.info("✅ Notificación de asignación de sistema enviada a {}", email);
-        } catch (MessagingException e) {
+        } catch (Exception e) {
             throw new RuntimeException("Error al enviar notificación: " + e.getMessage());
         }
     }
