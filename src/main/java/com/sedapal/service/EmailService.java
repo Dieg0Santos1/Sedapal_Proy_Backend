@@ -443,6 +443,19 @@ public class EmailService {
         }
     }
 
+    /**
+     * Envío síncrono (para endpoint de prueba): devuelve excepción si falla.
+     */
+    public void enviarEmailSimpleSync(String to, String subject, String text) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromEmail);
+        message.setTo(to);
+        message.setSubject(subject);
+        message.setText(text);
+        mailSender.send(message);
+        log.info("✅ Email simple (sync) enviado a: {}", to);
+    }
+
     // ================= Nuevos correos de notificación =================
     @Async("mailExecutor")
     public void enviarNotificacionUsuarioCumplio(String adminEmail, String usuarioNombre, String usuarioEmail,

@@ -60,14 +60,13 @@ public class NotificacionController {
     @PostMapping("/test")
     public ResponseEntity<String> testEmail(@RequestBody TestEmailRequest request) {
         try {
-            log.info("🧪 Probando envío de email a: {}", request.email());
-            
-            emailService.enviarEmailSimple(
+            log.info("🧪 Probando envío de email (sync) a: {}", request.email());
+            // Síncrono para que la respuesta refleje éxito real
+            emailService.enviarEmailSimpleSync(
                 request.email(),
                 "Test - Sistema SEDAPAL",
                 "Este es un email de prueba del sistema SEDAPAL. Si recibes este mensaje, la configuración de correo funciona correctamente."
             );
-            
             return ResponseEntity.ok("Email de prueba enviado exitosamente a " + request.email());
         } catch (Exception e) {
             log.error("❌ Error completo al enviar email de prueba:", e);
