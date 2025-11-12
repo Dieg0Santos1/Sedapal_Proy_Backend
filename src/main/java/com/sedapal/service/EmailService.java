@@ -10,6 +10,7 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
+import org.springframework.scheduling.annotation.Async;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +28,7 @@ public class EmailService {
     /**
      * Enviar credenciales de acceso por email
      */
+    @Async("mailExecutor")
     public void enviarCredenciales(String email, String nombre, String apellido, 
                                    String contrasena, Usuario.Rol rol) {
         try {
@@ -148,6 +150,7 @@ public class EmailService {
     /**
      * Enviar notificación de nueva actividad asignada
      */
+    @Async("mailExecutor")
     public void enviarNotificacionActividad(String email, String nombreUsuario, 
                                            String nombreActividad, String sistemaAbrev,
                                            String equipoNombre, int trimestre, 
@@ -277,6 +280,7 @@ public class EmailService {
     /**
      * Enviar credenciales con actividad asignada (usuario nuevo + actividad)
      */
+    @Async("mailExecutor")
     public void enviarCredencialesConActividad(String email, String nombre, String apellido, 
                                                String contrasena, String nombreActividad, 
                                                String sistemaAbrev, String equipoNombre, 
@@ -422,6 +426,7 @@ public class EmailService {
     /**
      * Enviar email simple (para testing)
      */
+    @Async("mailExecutor")
     public void enviarEmailSimple(String to, String subject, String text) {
         try {
             SimpleMailMessage message = new SimpleMailMessage();
@@ -439,6 +444,7 @@ public class EmailService {
     }
 
     // ================= Nuevos correos de notificación =================
+    @Async("mailExecutor")
     public void enviarNotificacionUsuarioCumplio(String adminEmail, String usuarioNombre, String usuarioEmail,
                                                 String nombreActividad, String entregableNombre, String sistemaAbrev,
                                                 String equipoNombre, String fechaMaxima) {
@@ -458,6 +464,7 @@ public class EmailService {
         }
     }
 
+    @Async("mailExecutor")
     public void enviarNotificacionConforme(java.util.List<String> usuariosDestino,
                                            java.util.List<String> superadminsDestino,
                                            String nombreActividad, String entregableNombre,
@@ -481,6 +488,7 @@ public class EmailService {
     }
 
     // ================= Usuario creado con equipo/gerencia =================
+    @Async("mailExecutor")
     public void enviarUsuarioCreado(String email, String nombreUsuario, String contrasena,
                                     String gerenciaNombre, String equipoNombre) {
         try {
@@ -553,6 +561,7 @@ public class EmailService {
         """.formatted(nombreUsuario, email, contrasena, gerenciaNombre, equipoNombre, construirFooterLogo());
     }
 
+    @Async("mailExecutor")
     public void enviarAsignacionSistema(String email, String nombreAdmin, String sistemaAbrev, String sistemaNombre) {
         try {
             MimeMessage message = mailSender.createMimeMessage();
